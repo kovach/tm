@@ -1,0 +1,25 @@
+rules
+
+ - (f> , <g) -> error (TODO)
+ - 
+ - (f> , x) -> (f> x , )
+ -           | ( , f(x))
+ - (x , <g) -> ( , g(x))
+ - (x , y) -> (x y , )
+
+Level 0 instruction set
+
+unify a b
+split a b
+store Name x
+stop
+
+Level 1 instruction set
+left name
+right name
+done name
+
+
+x
+y
+Pair x y
