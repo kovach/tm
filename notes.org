@@ -1,7 +1,9 @@
-rules
+* rules
 
- - (f> , <g) -> error (TODO)
+ - (f> , <g) -> error (see Notes section)
  - 
+ - ( , token) -> {( , copy meaning_i)}
+    where {meaning_i} is a set of meanings for token
  - (f> , x) -> (f> x , )
  -           | ( , f(x))
  - (x , <g) -> ( , g(x))
@@ -9,18 +11,33 @@ rules
 
 Level 0 instruction set
 
-unify a b
-split a b
 store Name x
 copy Name Name
+unify a b
+split a b
 stop
+
+update? for stacks
 
 Level 1 instruction set
 left name
 right name
 done name
 
+* Notes
+** errors
+for (f> , <g) could do a best guess
+  -> ( , f(E) <g)
+   | (f> , g(E))
 
-x
-y
-Pair x y
+where E is a Var with some form of annotation
+that the parse is a failure. Any resulting parse
+that otherwise looks ok (single node on stack)
+could be suggested - the inserted vars will carry
+information on what was missing.
+
+** interpreter
+can't use state monad
+want to explore shortest paths first
+single step interpreter lets us interpose on instructions
+

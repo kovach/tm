@@ -41,6 +41,7 @@ data I a b
   | Store a (Name -> I a b)
   | Copy Name (Name -> I a b)
   | Pure b
+  | Error String
   | Stop
 
 instance Functor (I Term) where
@@ -61,5 +62,6 @@ instance Monad (I Term) where
       Store v fn -> Store v ((>>= f) . fn)
       Copy n fn -> Copy n ((>>= f) . fn)
       Pure x -> f x
+      Error e -> Error e
       Stop -> Stop
 

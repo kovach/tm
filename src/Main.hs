@@ -2,6 +2,7 @@ module Main where
 
 import Log3
 import Types
+import Tests
 --import Condition
 --import Test
 
