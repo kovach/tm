@@ -12,6 +12,7 @@ Level 0 instruction set
 unify a b
 split a b
 store Name x
+copy Name Name
 stop
 
 Level 1 instruction set

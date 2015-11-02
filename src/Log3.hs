@@ -30,7 +30,6 @@ type Error = String
 type ME a = Either Error a
 
 
-
 insertList n v [] = [(n,v)]
 insertList n v ((n', _) : rest) | n == n' = (n', v) : rest
 insertList n v (pair : rest) = pair : insertList n v rest
@@ -71,10 +70,10 @@ walk n = do
 
 -- Recursively copy a form.
 -- Everything gets a fresh name.
-copy :: Name -> Morph Term Name
-copy name = do
+shift :: Name -> Morph Term Name
+shift name = do
   form <- look name
-  form' <- mapM copy form
+  form' <- mapM shift form
   store form'
 
 -- TODO delete
@@ -86,8 +85,18 @@ copyTest1 = do
   store Var
   v <- store Var
   p <- store $ Pair u v
-  q <- copy p
+  q <- shift p
   return q
+copyTest2 :: Pr
+copyTest2 = do
+  u <- st Var
+  st Var
+  st Var
+  st Var
+  v <- st Var
+  p <- st $ Pair u v
+  q <- copy p
+  Stop
 
 unify :: Name -> Name -> MMorph Term ()
 unify n1 n2 = do
@@ -154,14 +163,17 @@ runMM m e = runState (runEitherT m) e
 
 step :: ME (Head Term) -> Maybe [ME (Head Term)]
 step (Left e) = Nothing
-step (Right h) = case h of
-  (H Stop _) -> Nothing
-  (H (Unify n1 n2 cont) env) -> Just $ single $ do
+step (Right (H h env)) = case h of
+  Stop -> Nothing
+  Unify n1 n2 cont -> Just $ single $ do
    env' <- sigh $ runMM (unify n1 n2) env
    return $ H cont env'
-  (H (Split is) env) -> Just [return (H i env) | i <- is]
+  Split is -> Just [return (H i env) | i <- is]
  
-  (H (Store val fcont) env) ->
+  Copy x fcont ->
+    let (name, env') = runState (shift x) env in
+      Just $ [return (H (fcont name) env')]
+  Store val fcont ->
     let (name, env') = runState (store val) env in
       Just $ [return (H (fcont name) env')]
 
@@ -197,6 +209,8 @@ eq :: Name -> Name -> I a ()
 eq x y = Unify x y (Pure ())
 
 amb x y = Split [x, y]
+
+copy x = Copy x Pure
 
 p1' :: Pr
 p1' = do

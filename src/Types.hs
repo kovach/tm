@@ -39,6 +39,7 @@ data I a b
   = Unify Name Name (I a b)
   | Split [I a b]
   | Store a (Name -> I a b)
+  | Copy Name (Name -> I a b)
   | Pure b
   | Stop
 
@@ -58,6 +59,7 @@ instance Monad (I Term) where
       Unify a b cont -> Unify a b (cont >>= f)
       Split conts -> Split (map (>>= f) conts)
       Store v fn -> Store v ((>>= f) . fn)
+      Copy n fn -> Copy n ((>>= f) . fn)
       Pure x -> f x
       Stop -> Stop
 
