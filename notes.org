@@ -18,6 +18,8 @@ split a b
 stop
 
 update? for stacks
+  ? push a b
+  ? pop Name a
 
 Level 1 instruction set
 left name

@@ -79,3 +79,12 @@ p5 = do
   sym "k2" k
   return p
 
+p6 = do
+  v <- st Nil
+  s <- st (Ind v)
+  v1 <- st $ Sym "1"
+  v2 <- st $ Sym "2"
+  push v2 s
+  push v1 s
+  pop s
+  return s

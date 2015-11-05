@@ -27,22 +27,26 @@ data T a
   | Pair a a
   | Relation a a a -- ?
 
-  | LEFT a a
-  | RIGHT a a
-  | DONE a
+  | LBind a a
+  | RBind a a
+  | Node a
 
   deriving (Show, Eq, Ord, Functor, F.Foldable, T.Traversable)
 
 type Term = T Name
 
 data I a b
-  = Unify Name Name (I a b)
-  | Split [I a b]
-  | Store a (Name -> I a b)
-  | Copy Name (Name -> I a b)
-  | Pure b
+  = Pure b
   | Error String
   | Stop
+
+  | Unify Name Name (I a b)
+  | Split [I a b] -- Needs to be finite. TODO make it a pair?
+
+  | Update Name a (I a b)
+
+  | Store a (Name -> I a b)
+  | Copy Name (Name -> I a b)
 
 instance Functor (I Term) where
   fmap f m = undefined
@@ -57,11 +61,12 @@ instance Monad (I Term) where
   return = Pure
   m >>= f =
     case m of
-      Unify a b cont -> Unify a b (cont >>= f)
-      Split conts -> Split (map (>>= f) conts)
-      Store v fn -> Store v ((>>= f) . fn)
-      Copy n fn -> Copy n ((>>= f) . fn)
       Pure x -> f x
       Error e -> Error e
       Stop -> Stop
+      Unify a b cont -> Unify a b (cont >>= f)
+      Split conts -> Split (map (>>= f) conts)
+      Update a v cont -> Update a v (cont >>= f)
+      Store v fn -> Store v ((>>= f) . fn)
+      Copy n fn -> Copy n ((>>= f) . fn)
 

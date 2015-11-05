@@ -155,6 +155,7 @@ sigh (y, x) =
 --runMM :: MMorph s a -> Env s -> (Env s, Either String a)
 runMM m e = runState (runEitherT m) e
 
+-- TODO use Data.Set?
 normalize :: [ME (Head Term a)] -> [ME (Head Term a)] 
 normalize = sortOn thing
   where
@@ -172,18 +173,23 @@ step (Right (H h env)) = case h of
    env' <- sigh $ runMM (unify n1 n2) env
    return $ H cont env'
   Split is -> Just [return (H i env) | i <- is]
- 
+
+  Update name val cont ->
+    let (_, env') = runState (update name val) env in
+    Just $ [return (H cont env')]
+
   Copy x fcont ->
     let (name, env') = runState (shift x) env in
-      Just $ [return (H (fcont name) env')]
+    Just $ [return (H (fcont name) env')]
   Store val fcont ->
     let (name, env') = runState (store val) env in
-      Just $ [return (H (fcont name) env')]
+    Just $ [return (H (fcont name) env')]
   where
     single x = [x]
 
 
 steps :: [ME (Head Term a)] -> [ME (Head Term a)]
+steps [] = [] -- lol
 steps es =
   let
     (as, bs) = split $ map run es
@@ -255,11 +261,11 @@ copy x = Copy x Pure
 eq :: Name -> Name -> P ()
 eq x y = Unify x y (Pure ())
 
-split :: [P a] -> P a
-split = Split
+up :: Name -> Term -> P ()
+up n v = Update n v (Pure ())
 
 amb :: P a -> P a -> P a
-amb x y = split [x, y]
+amb x y = Split [x, y]
 
 failure :: String -> P a
 failure = Error
@@ -267,6 +273,7 @@ failure = Error
 -- Basics
 
 var = st Var
+
 sym :: Symbol -> Name -> P ()
 sym sym n = do
   x <- st $ Sym sym
@@ -279,24 +286,43 @@ nil n = do
 
 pair :: Name -> P (V, V)
 pair n = do
-  l <- st Var
-  r <- st Var
+  l <- var
+  r <- var
   c <- st (Pair l r)
   eq c n
   return $ (l, r)
 
 single :: Name -> P V
 single n = do
-  l <- st Var
+  l <- var
   r <- st Nil
   c <- st (Pair l r)
   eq c n
   return $ l
 
+ind :: Name -> P Name
+ind n = do
+  v <- var
+  x <- st (Ind v)
+  eq x n
+  return v
+
+push :: Name -> Name -> P ()
+push val stack = do
+  l <- ind stack
+  l' <- st (Pair val l)
+  up stack (Ind l')
+
+pop :: Name -> P Name
+pop stack = do
+  l <- ind stack
+  (t, r) <- pair l
+  up stack (Ind r)
+  return t
 
 dereference :: Name -> Name -> P Name
 dereference key dict =
-  split [end, top, bottom]
+  Split [end, top, bottom]
   where
     end = do
       nil dict
