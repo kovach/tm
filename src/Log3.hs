@@ -71,31 +71,29 @@ walk n = do
     Var -> return $ V n
     _ -> return $ F val
 
--- Recursively copy a form.
--- Everything gets a fresh name.
+-- Recursively copy a form. Everything gets a fresh name.
+-- Equalities between existing subterms are preserved
+shift n = do
+  c <- shiftChildren [] n
+  return $ fromJust $ lookup n c
 
--- TODO get rid of this
-copyDebug = True
+type Context = [(Name, Name)]
+shiftTerm :: Context -> Term -> Term
+shiftTerm context term = fmap mod term
+  where
+    mod n | Just n' <- lookup n context = n'
+    mod n = error "HUH"
 
-shift :: Name -> Morph Term Name
-shift name = do
-  form <- look name
-  form' <- mapM shift form
-  out <- store form'
-  (if copyDebug then trace (show out ++ ": " ++ show form') else id) $
-    return out
-
--- TODO delete
-copyTest1 :: Morph Term Name
-copyTest1 = do
-  u <- store Var
-  store Var
-  store Var
-  store Var
-  v <- store Var
-  p <- store $ Pair u v
-  q <- shift p
-  return q
+shiftChildren :: Context -> Name -> Morph Term Context
+shiftChildren context name = do
+      case lookup name context of
+        Nothing -> do
+          form <- look name
+          c' <- F.foldlM shiftChildren context form
+          let form' = shiftTerm c' form
+          name' <- store form'
+          return $ (name, name') : c'
+        Just _ -> return context
 
 unify :: Name -> Name -> MMorph Term ()
 unify n1 n2 = do
@@ -247,6 +245,9 @@ chk n i =
       putStrLn $ init $ unlines $
         map (++ "\n") $ filter ((> 0) . length) $ map showMH $ r
 
+chm i =
+  mapM_ (flip chk i) [0..8]
+
 type Pr = I Term ()
 type P a = I Term a
 type V = Name
@@ -359,13 +360,18 @@ dereference key dict =
       (_, t) <- pair dict
       dereference key t
 
--- Rules
+dict_look :: Name -> Name -> P Name
+dict_look key dict = do
+  the_dict <- ind dict
+  dereference key the_dict
 
+-- Rules
 parse_step :: Name -> Name -> Name -> P ()
 parse_step dict l r = Split $
     [ p_node
     , p_clash
     , p_lbind
+    , p_rbind
     , p_symbol
     , p_done
     ]
@@ -377,7 +383,8 @@ parse_step dict l r = Split $
     --  return ()
     p_symbol = do
       sym <- pop r
-      rule <- dereference sym dict
+      binding <- dict_look sym dict
+      rule <- copy binding
       push rule r
 
     p_lbind = do
@@ -387,8 +394,13 @@ parse_step dict l r = Split $
       eq t l_node
       push next r
 
-    -- p_rbind = do
-
+    -- hmm
+    p_rbind = do
+      l_rbind <- pop l
+      r_node <- pop r
+      (t, next) <- pright l_rbind
+      eq t r_node
+      push next r
 
     p_clash = do
       l_rbind <- pop l
@@ -405,3 +417,35 @@ parse_step dict l r = Split $
       nil r
       Stop
 
+-- Program construction
+mkRule :: [Name] -> [Name] -> Name -> P Name
+mkRule lefts rights node = do
+  r0 <- mkChain RBind rights node
+  r1 <- mkChain LBind lefts r0
+  return r1
+
+mkChain :: (Name -> Name -> Term) -> [Name] -> Name -> P Name
+mkChain _ [] n = return n
+mkChain f (x : xs) n = do
+  r <- st $ f x n
+  mkChain f xs r
+
+-- "Rules"
+rec_rule sym mrule dict = do
+  rule <- mrule
+  label <- st (Sym sym)
+  r <- st $ Pair label rule
+  push r dict
+
+r_eq = do
+  x <- var
+  mkRule [x] [x] x
+
+r_plus = do
+  l <- var
+  r <- var
+  p <- st $ Pair l r
+  mkRule [l] [r] p
+
+rec_eq dict = rec_rule "=" r_eq dict
+rec_plus dict = rec_rule "+" r_plus dict

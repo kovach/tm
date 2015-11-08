@@ -24,16 +24,21 @@ p2 = do
   (h, t) <- pair n1
   Stop
 
-copyTest2 :: Pr
-copyTest2 = do
+ct1 :: P Name
+ct1 = do
+  u <- st Var
+  p <- st $ Pair u u
+  copy p
+
+ct2 :: P Name
+ct2 = do
   u <- st Var
   st Var
   st Var
   st Var
   v <- st Var
   p <- st $ Pair u v
-  q <- copy p
-  Stop
+  copy p
 
 -- Fully concrete dict
 p3 :: Pr
@@ -111,24 +116,83 @@ setup = do
 
   l0 <- ind l
   r0 <- ind r
+  d0 <- ind dict
 
-  return ((), (dict, l, r, l0, r0))
-pm = do
-  (_, (dict, l, r, _, _)) <- setup
+  return ((dict, l, r), (d0, l0, r0))
 
-  op <- var
-  sym "lol" op
-  push op r
-
-  v <- dereference op dict
-  single r
-  return ()
-
-pmain = do
-  (_, (dict, l, r, l0, r0)) <- setup
-  parse_step dict l r
-  parse_step dict l r
-  parse_step dict l r
+done :: Name -> Name -> P Name
+done l r = do
   empty r
-  result <- single l
+  single l
+
+p9 = do
+  ((dict, l, r), (d0, l0, r0)) <- setup
+  parse_step dict l r
+  parse_step dict l r
+  parse_step dict l r
+  result <- done l r
   return (result, dict, l0, r0)
+
+
+standard_init = do
+  p@((dict, l, r), _) <- setup
+  empty dict
+  empty l
+  empty r
+  rec_plus dict
+  rec_eq dict
+  return p
+
+repl 0 m = return ()
+repl n m = m >> repl (n-1) m
+
+doCounter = True
+pfix dict l r c = Split [d, again]
+  where
+    d = do
+      res <- done l r
+      return res
+    again = do
+      v <- if doCounter
+             then do
+               v <- var
+               i <- st $ Ind v
+               eq c i
+               return v
+             else return c
+      parse_step dict l r
+      pfix dict l r v
+
+-- TODO return count
+runp m = do
+  ((dict, l, r), (d0, l0, r0)) <- standard_init
+  counter <- var
+  m dict l r
+  res <- pfix dict l r counter
+  count <- nat2int counter
+  return (count, res, l0, r0)
+
+p10 dict l r = do
+  pl <- st (Sym "=")
+  n0 <- st $ Sym "a"
+  n1 <- st $ Sym "a"
+  push n1 r
+  push pl r
+  push n0 r
+
+p11 = do
+  v <- st Var
+  u <- st Var
+  a <- st (LBind u v)
+  b <- copy a
+  return b
+
+
+nat2int :: Name -> P Int
+nat2int n = amb o succ
+  where
+    o = nil n >> return 0
+    succ = do
+      n' <- ind n
+      v <- nat2int n'
+      return $ 1 + v
