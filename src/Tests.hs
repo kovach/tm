@@ -88,3 +88,47 @@ p6 = do
   push v1 s
   pop s
   return s
+
+p7 = do
+  s <- var
+  s0 <- ind s
+  i1 <- pop s
+  i2 <- pop s
+  return (s, s0)
+
+p8 = do
+  l <- var
+  r <- var
+  s <- pop r
+  (a, b) <- pleft s
+  push b l
+  return l
+
+setup = do
+  l <- var
+  r <- var
+  dict <- var
+
+  l0 <- ind l
+  r0 <- ind r
+
+  return ((), (dict, l, r, l0, r0))
+pm = do
+  (_, (dict, l, r, _, _)) <- setup
+
+  op <- var
+  sym "lol" op
+  push op r
+
+  v <- dereference op dict
+  single r
+  return ()
+
+pmain = do
+  (_, (dict, l, r, l0, r0)) <- setup
+  parse_step dict l r
+  parse_step dict l r
+  parse_step dict l r
+  empty r
+  result <- single l
+  return (result, dict, l0, r0)

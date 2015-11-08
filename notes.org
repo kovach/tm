@@ -43,3 +43,18 @@ can't use state monad
 want to explore shortest paths first
 single step interpreter lets us interpose on instructions
 
+** negation
+currently we use "term sets" (let's call them "closed")
+they describe a set of values a node can take.
+the intersection of term sets is a term set, e.g.
+  T a Var /\ T Var b == T a b
+and to form a union, we branch execution.
+
+might want to form the complement of a term set, like [not (A Var)];
+this requires keeping a list for each entity (representing the
+intersection of the complements of its elements) and complicating
+the unify procedure somewhat, but it's clear what to do.
+
+is this an optimization in the sense that, any algorithm whose
+correct outcome depends on it could be rewritten to not depend on
+it?

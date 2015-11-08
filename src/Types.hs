@@ -43,6 +43,7 @@ data I a b
   | Unify Name Name (I a b)
   | Split [I a b] -- Needs to be finite. TODO make it a pair?
 
+  -- TODO separate mutation
   | Update Name a (I a b)
 
   | Store a (Name -> I a b)

@@ -276,13 +276,14 @@ var = st Var
 
 sym :: Symbol -> Name -> P ()
 sym sym n = do
-  x <- st $ Sym sym
-  eq x n
+  p <- st $ Sym sym
+  eq p n
 
 nil :: Name -> P ()
 nil n = do
-  x <- st Nil
-  eq x n
+  p <- st Nil
+  eq p n
+
 
 pair :: Name -> P (V, V)
 pair n = do
@@ -292,19 +293,25 @@ pair n = do
   eq c n
   return $ (l, r)
 
+empty :: Name -> P ()
+empty n = do
+  s <- ind n
+  nil s
+
 single :: Name -> P V
 single n = do
   l <- var
   r <- st Nil
-  c <- st (Pair l r)
-  eq c n
+  p <- st (Pair l r)
+  s <- ind n
+  eq p s
   return $ l
 
 ind :: Name -> P Name
 ind n = do
   v <- var
-  x <- st (Ind v)
-  eq x n
+  p <- st (Ind v)
+  eq p n
   return v
 
 push :: Name -> Name -> P ()
@@ -319,6 +326,22 @@ pop stack = do
   (t, r) <- pair l
   up stack (Ind r)
   return t
+
+pleft :: Name -> P (Name, Name)
+pleft n = do
+  v <- var
+  next <- var
+  p <- st (LBind v next)
+  eq p n
+  return (v, next)
+
+pright :: Name -> P (Name, Name)
+pright n = do
+  v <- var
+  next <- var
+  p <- st (RBind v next)
+  eq p n
+  return (v, next)
 
 dereference :: Name -> Name -> P Name
 dereference key dict =
@@ -337,4 +360,48 @@ dereference key dict =
       dereference key t
 
 -- Rules
+
+parse_step :: Name -> Name -> Name -> P ()
+parse_step dict l r = Split $
+    [ p_node
+    , p_clash
+    , p_lbind
+    , p_symbol
+    , p_done
+    ]
+
+  where
+    --p_noop = do
+    --  r_noop <- pop r
+    --  sym "CONTINUE" r_noop
+    --  return ()
+    p_symbol = do
+      sym <- pop r
+      rule <- dereference sym dict
+      push rule r
+
+    p_lbind = do
+      l_node <- pop l
+      r_lbind <- pop r
+      (t, next) <- pleft r_lbind
+      eq t l_node
+      push next r
+
+    -- p_rbind = do
+
+
+    p_clash = do
+      l_rbind <- pop l
+      r_lbind <- pop r
+      _ <- pright l_rbind
+      _ <- pleft r_lbind
+      Error $ "CLASH: " ++ sep l_rbind r_lbind
+
+    p_node = do
+      r_node <- pop r
+      push r_node l
+
+    p_done = do
+      nil r
+      Stop
 
