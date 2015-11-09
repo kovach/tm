@@ -21,7 +21,9 @@ data T a
   | Eq a
 
   | Nil
-  | Sym Symbol
+  | Lit Symbol
+
+  | Sym a
 
   | Ind a
   | Pair a a
@@ -48,9 +50,11 @@ data I a b
 
   | Store a (Name -> I a b)
   | Copy Name (Name -> I a b)
+  deriving (Functor)
 
-instance Functor (I Term) where
-  fmap f m = undefined
+--TODO derived is ok?
+--instance Functor (I Term) where
+--  fmap f m = undefined
 instance Applicative (I Term) where
   pure = return
   f <*> x = do

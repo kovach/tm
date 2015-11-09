@@ -277,8 +277,13 @@ var = st Var
 
 sym :: Symbol -> Name -> P ()
 sym sym n = do
-  p <- st $ Sym sym
+  p <- st $ Lit sym
   eq p n
+
+word :: Symbol -> P Name
+word n = do
+  l <- st $ Lit n
+  st $ Sym l
 
 nil :: Name -> P ()
 nil n = do
@@ -320,6 +325,21 @@ push val stack = do
   l <- ind stack
   l' <- st (Pair val l)
   up stack (Ind l')
+
+
+amb_ :: P a -> P b -> P ()
+amb_ a b = amb (a >> return ()) (b >> return ())
+
+-- Push onto "rope"
+rpush :: Name -> Name -> P ()
+rpush val stack = amb cell top
+  where
+    cell = do
+      list <- pop stack
+      _ <- nil list `amb_` pair list
+      l' <- st (Pair val list)
+      push l' stack
+    top = push val stack
 
 pop :: Name -> P Name
 pop stack = do
@@ -373,14 +393,9 @@ parse_step dict l r = Split $
     , p_lbind
     , p_rbind
     , p_symbol
-    , p_done
     ]
 
   where
-    --p_noop = do
-    --  r_noop <- pop r
-    --  sym "CONTINUE" r_noop
-    --  return ()
     p_symbol = do
       sym <- pop r
       binding <- dict_look sym dict
@@ -411,11 +426,16 @@ parse_step dict l r = Split $
 
     p_node = do
       r_node <- pop r
-      push r_node l
+      rpush r_node l
 
-    p_done = do
-      nil r
-      Stop
+    --p_noop = do
+    --  r_noop <- pop r
+    --  sym "CONTINUE" r_noop
+    --  return ()
+
+    --p_done = do
+    --  nil r
+    --  Stop
 
 -- Program construction
 mkRule :: [Name] -> [Name] -> Name -> P Name
@@ -433,8 +453,8 @@ mkChain f (x : xs) n = do
 -- "Rules"
 rec_rule sym mrule dict = do
   rule <- mrule
-  label <- st (Sym sym)
-  r <- st $ Pair label rule
+  token <- word sym
+  r <- st $ Pair token rule
   push r dict
 
 r_eq = do
@@ -449,3 +469,24 @@ r_plus = do
 
 rec_eq dict = rec_rule "=" r_eq dict
 rec_plus dict = rec_rule "+" r_plus dict
+
+-- [x: x is a thing]
+-- '[' -> do
+  -- push Nil
+  -- x <- rbind
+  -- push (x, Var) dict
+-- ']' -> do
+  -- stack <- lbind
+  -- res <- single stack (or empty?)
+  -- ?? res
+
+
+-- Stuff
+nat2int :: Name -> P Int
+nat2int n = amb o succ
+  where
+    o = nil n >> return 0
+    succ = do
+      n' <- ind n
+      v <- nat2int n'
+      return $ 1 + v

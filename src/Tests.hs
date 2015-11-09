@@ -87,8 +87,8 @@ p5 = do
 p6 = do
   v <- st Nil
   s <- st (Ind v)
-  v1 <- st $ Sym "1"
-  v2 <- st $ Sym "2"
+  v1 <- st $ Lit "1"
+  v2 <- st $ Lit "2"
   push v2 s
   push v1 s
   pop s
@@ -173,26 +173,10 @@ runp m = do
   return (count, res, l0, r0)
 
 p10 dict l r = do
-  pl <- st (Sym "=")
-  n0 <- st $ Sym "a"
-  n1 <- st $ Sym "a"
+  pl <- word "="
+  n0 <- word "a"
+  n1 <- word "a"
   push n1 r
   push pl r
   push n0 r
 
-p11 = do
-  v <- st Var
-  u <- st Var
-  a <- st (LBind u v)
-  b <- copy a
-  return b
-
-
-nat2int :: Name -> P Int
-nat2int n = amb o succ
-  where
-    o = nil n >> return 0
-    succ = do
-      n' <- ind n
-      v <- nat2int n'
-      return $ 1 + v
