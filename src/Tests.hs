@@ -123,7 +123,9 @@ setup = do
 done :: Name -> Name -> P Name
 done l r = do
   empty r
-  single l
+  v <- single l
+  value v
+  return v
 
 p9 = do
   ((dict, l, r), (d0, l0, r0)) <- setup
@@ -139,8 +141,9 @@ standard_init = do
   empty dict
   empty l
   empty r
-  rec_plus dict
-  rec_eq dict
+
+  mapM (flip (uncurry rec_rule) dict) rules
+
   return p
 
 repl 0 m = return ()
@@ -170,7 +173,7 @@ runp m = do
   m dict l r
   res <- pfix dict l r counter
   count <- nat2int counter
-  return (count, res, l0, r0)
+  return (count, res, dict, l0, r0)
 
 p10 dict l r = do
   pl <- word "="
@@ -180,3 +183,21 @@ p10 dict l r = do
   push pl r
   push n0 r
 
+p10' dict l r = do
+  op <- word "="
+  n0 <- word "a"
+  n1 <- word "a"
+  push n1 r
+  lst <- storeList [n0, op]
+  push lst r
+
+p10'' dict l r = program "a = a" r
+
+p11 dict l r = program "[ x a ]" r
+p12 dict l r = do
+  n <- st Node
+  op <- word "]"
+  x <- word "x"
+  push op r
+  push x r
+  push n r

@@ -280,10 +280,18 @@ sym sym n = do
   p <- st $ Lit sym
   eq p n
 
+-- TODO better naming scheme
 word :: Symbol -> P Name
 word n = do
   l <- st $ Lit n
   st $ Sym l
+
+token :: Name -> P Name
+token n = do
+  v <- var
+  p <- st (Sym v)
+  eq p n
+  return v
 
 nil :: Name -> P ()
 nil n = do
@@ -326,13 +334,12 @@ push val stack = do
   l' <- st (Pair val l)
   up stack (Ind l')
 
-
 amb_ :: P a -> P b -> P ()
 amb_ a b = amb (a >> return ()) (b >> return ())
 
 -- Push onto "rope"
-rpush :: Name -> Name -> P ()
-rpush val stack = amb cell top
+push1 :: Name -> Name -> P ()
+push1 val stack = amb cell top
   where
     cell = do
       list <- pop stack
@@ -340,6 +347,24 @@ rpush val stack = amb cell top
       l' <- st (Pair val list)
       push l' stack
     top = push val stack
+
+-- Pop from "rope"
+pop1 :: Name -> P Name
+pop1 stack = amb cell top
+  where
+    cell = do
+      list <- pop stack
+      amb (cell_O list) (cell_S list)
+    cell_O list = do
+      nil list
+      pop stack
+    cell_S list = do
+      (t, r) <- pair list
+      push r stack
+      return t
+    top = pop stack
+
+
 
 pop :: Name -> P Name
 pop stack = do
@@ -363,6 +388,18 @@ pright n = do
   p <- st (RBind v next)
   eq p n
   return (v, next)
+
+extend :: Name -> Name -> P Name
+extend k v = do
+  st (Extension k v)
+
+extension :: Name -> P (Name, Name)
+extension n = do
+  k <- var
+  v <- var
+  p <- extend k v
+  eq p n
+  return (k, v)
 
 dereference :: Name -> Name -> P Name
 dereference key dict =
@@ -393,40 +430,60 @@ parse_step dict l r = Split $
     , p_lbind
     , p_rbind
     , p_symbol
+    , p_extend
+    , p_sub
     ]
 
   where
     p_symbol = do
-      sym <- pop r
+      sym <- pop1 r
       binding <- dict_look sym dict
       rule <- copy binding
       push rule r
 
     p_lbind = do
-      l_node <- pop l
-      r_lbind <- pop r
+      l_node <- pop1 l
+      r_lbind <- pop1 r
       (t, next) <- pleft r_lbind
       eq t l_node
       push next r
 
-    -- hmm
     p_rbind = do
-      l_rbind <- pop l
-      r_node <- pop r
+      l_rbind <- pop1 l
+      r_node <- pop1 r
       (t, next) <- pright l_rbind
       eq t r_node
       push next r
 
     p_clash = do
-      l_rbind <- pop l
-      r_lbind <- pop r
+      l_rbind <- pop1 l
+      r_lbind <- pop1 r
       _ <- pright l_rbind
       _ <- pleft r_lbind
       Error $ "CLASH: " ++ sep l_rbind r_lbind
 
     p_node = do
-      r_node <- pop r
-      rpush r_node l
+      r_node <- pop1 r
+      amb_ (value r_node) (pright r_node)
+      push1 r_node l
+
+    p_extend = do
+      r_ext <- pop1 r
+      (k, v) <- extension r_ext
+      -- TODO just make dict a list of Extensions
+      p <- st (Pair k v)
+      push p dict
+
+    p_sub = do
+      rn <- pop1 r
+      p <- st Node
+      eq p rn
+      n <- st Nil
+      push1 n l
+
+value :: Name -> P ()
+value name = do
+  amb_ (nil name) (token name)
 
     --p_noop = do
     --  r_noop <- pop r
@@ -467,8 +524,32 @@ r_plus = do
   p <- st $ Pair l r
   mkRule [l] [r] p
 
-rec_eq dict = rec_rule "=" r_eq dict
-rec_plus dict = rec_rule "+" r_plus dict
+
+r_lbracket = do
+  v <- var
+  arg <- st $ Sym v
+  meaning <- var
+  op <- extend arg meaning
+  n <- st Node
+  out <- storeList [op, n]
+  mkRule [] [arg] out
+
+r_rbracket = do
+  p <- var
+  v <- single p
+  mkRule [p] [] v
+
+rec_eq = rec_rule "=" r_eq
+rec_plus = rec_rule "+" r_plus
+rec_lbracket = rec_rule "[" r_lbracket
+rec_rbracket = rec_rule "]" r_rbracket
+
+rules =
+  [ ("=", r_eq)
+  , ("+", r_plus)
+  , ("[", r_lbracket)
+  , ("]", r_rbracket)
+  ]
 
 -- [x: x is a thing]
 -- '[' -> do
@@ -490,3 +571,15 @@ nat2int n = amb o succ
       n' <- ind n
       v <- nat2int n'
       return $ 1 + v
+
+storeList :: [Name] -> P Name
+storeList [] = st Nil
+storeList (x : xs) = do
+  r <- storeList xs
+  c <- st (Pair x r)
+  return c
+
+program :: String -> Name -> P ()
+program str r = do
+  ops <- mapM word $ words str
+  mapM_ (flip push r) (reverse ops)

@@ -21,6 +21,7 @@ data T a
   | Eq a
 
   | Nil
+  | Node
   | Lit Symbol
 
   | Sym a
@@ -29,9 +30,10 @@ data T a
   | Pair a a
   | Relation a a a -- ?
 
+  | Extension a a
+
   | LBind a a
   | RBind a a
-  | Node a
 
   deriving (Show, Eq, Ord, Functor, F.Foldable, T.Traversable)
 
