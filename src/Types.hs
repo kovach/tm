@@ -22,13 +22,14 @@ data T a
 
   | Nil
   | Node
-  | Lit Symbol
 
-  | Sym a
+  | Lit Symbol
+  | Symbol a
+  | Token a
 
   | Ind a
   | Pair a a
-  | Relation a a a -- ?
+  | Cons a a
 
   | Extension a a
 

@@ -49,13 +49,13 @@ p3 = do
   nil t1
   (k1, v1) <- pair p1
   (k2, v2) <- pair p2
-  sym "k1" k1
-  sym "v1" v1
-  sym "k2" k2
-  sym "v2" v2
+  lit "k1" k1
+  lit "v1" v1
+  lit "k2" k2
+  lit "v2" v2
 
   ok <- var
-  sym "k1" ok
+  lit "k1" ok
   val <- dereference ok d
 
   Stop
@@ -69,8 +69,8 @@ p4 = do
 
   k1 <- var
   k2 <- var
-  sym "k1" k1
-  sym "k2" k2
+  lit "k1" k1
+  lit "k2" k2
   v1 <- dereference k1 d
   v2 <- dereference k2 d
 
@@ -81,7 +81,7 @@ p5 = do
   p@(d, _, _) <- p4
   (h, _) <- pair d
   (k, _) <- pair h
-  sym "k2" k
+  lit "k2" k
   return p
 
 p6 = do
@@ -201,3 +201,5 @@ p12 dict l r = do
   push op r
   push x r
   push n r
+
+defp s _ _ = program s

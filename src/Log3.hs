@@ -10,6 +10,8 @@ import Control.Monad.Trans.Either
 
 import Debug.Trace (trace)
 
+import Data.Char (isUpper)
+
 import Types
 
 
@@ -167,7 +169,7 @@ step (Right (H h env)) = case h of
   Error e -> Nothing
   Pure x -> Nothing
 
-  Unify n1 n2 cont -> Just $ single $ do
+  Unify n1 n2 cont -> Just $ ret $ do
    env' <- sigh $ runMM (unify n1 n2) env
    return $ H cont env'
   Split is -> Just [return (H i env) | i <- is]
@@ -183,7 +185,7 @@ step (Right (H h env)) = case h of
     let (name, env') = runState (store val) env in
     Just $ [return (H (fcont name) env')]
   where
-    single x = [x]
+    ret x = [x]
 
 
 steps :: [ME (Head Term a)] -> [ME (Head Term a)]
@@ -218,15 +220,15 @@ takeN n (t@(Left e) : r) = t : takeN n r
 takeN n (t@(Right h) : r) | isFailure h = t : takeN n r
 takeN n (Right x : r) = Right x : takeN (n-1) r
 
-takeNOK _ [] = []
-takeNOK 0 _ = []
-takeNOK n (t@(Left e) : r) = takeNOK n r
-takeNOK n (t@(Right h) : r) | isFailure h = takeNOK n r
-takeNOK n (Right x : r) = Right x : takeNOK (n-1) r
+takeNOK c _ [] = []
+takeNOK c 0 _ = []
+takeNOK c n (t@(Left e) : r) = takeNOK (c+1) n r
+takeNOK c n (t@(Right h) : r) | isFailure h = takeNOK (c+1) n r
+takeNOK c n (Right x : r) = (c, Right x) : takeNOK (c+1) (n-1) r
 
-showMH (Left e) = e
-showMH (Right (H i e)) =
-  ppI i ++ "\n" ++ show e
+showMH (_, Left e) = e
+showMH (c, Right (H i e)) =
+  "DEPTH: " ++ show c ++ "\n" ++ ppI i ++ "\n" ++ show e
 
 ppI (Error err) =
   "Parse error: " ++ err
@@ -234,14 +236,13 @@ ppI (Pure b) = "Result: " ++ show b ++ "."
 ppI Stop = "Done."
 ppI x = "Incomplete run."
 
-eval :: Show a => Int -> P a -> [ME (Head Term a)]
-eval n i = takeNOK n $ steps [Right $ H i emptyEnv]
+eval :: Show a => Int -> P a -> [(Int, ME (Head Term a))]
+eval n i = takeNOK 0 n $ steps [Right $ H i emptyEnv]
 
 chk n i =
   case eval n i of
-    [] -> putStrLn "No Parse" ------- not needed really
+    [] -> putStrLn $ "No Parse."
     r -> do
-      putStrLn $ "branches: " ++ show (length r) ++ "\n"
       putStrLn $ init $ unlines $
         map (++ "\n") $ filter ((> 0) . length) $ map showMH $ r
 
@@ -250,7 +251,6 @@ chm i =
 
 type Pr = I Term ()
 type P a = I Term a
-type V = Name
 
 -- Instructions
 st :: Term -> P Name
@@ -272,24 +272,40 @@ failure :: String -> P a
 failure = Error
 
 -- Basics
+-- TODO better naming scheme
+-- do this:
+-- mk_foo :: name -> P Term
+-- match_1 :: (name -> P Term) -> name -> P name
+-- ?
 
 var = st Var
 
-sym :: Symbol -> Name -> P ()
-sym sym n = do
+lit :: Symbol -> Name -> P ()
+lit sym n = do
   p <- st $ Lit sym
   eq p n
 
--- TODO better naming scheme
+sym :: Symbol -> P Name
+sym s = do
+  l <- st $ Lit s
+  st $ Symbol l
+
 word :: Symbol -> P Name
 word n = do
   l <- st $ Lit n
-  st $ Sym l
+  st $ Token l
+
+symbol :: Name -> P Name
+symbol n = do
+  v <- var
+  p <- st (Symbol v)
+  eq p n
+  return v
 
 token :: Name -> P Name
 token n = do
   v <- var
-  p <- st (Sym v)
+  p <- st (Token v)
   eq p n
   return v
 
@@ -298,12 +314,19 @@ nil n = do
   p <- st Nil
   eq p n
 
+tuple :: Name -> P (Name, Name)
+tuple n = do
+  l <- var
+  r <- var
+  p <- st (Pair l r)
+  eq p n
+  return $ (l, r)
 
-pair :: Name -> P (V, V)
+pair :: Name -> P (Name, Name)
 pair n = do
   l <- var
   r <- var
-  c <- st (Pair l r)
+  c <- st (Cons l r)
   eq c n
   return $ (l, r)
 
@@ -312,13 +335,21 @@ empty n = do
   s <- ind n
   nil s
 
-single :: Name -> P V
+single :: Name -> P Name
 single n = do
   l <- var
   r <- st Nil
-  p <- st (Pair l r)
+  p <- st (Cons l r)
   s <- ind n
   eq p s
+  return $ l
+
+singleton :: Name -> P Name
+singleton n = do
+  l <- var
+  r <- st Nil
+  p <- st (Cons l r)
+  eq p n
   return $ l
 
 ind :: Name -> P Name
@@ -331,7 +362,7 @@ ind n = do
 push :: Name -> Name -> P ()
 push val stack = do
   l <- ind stack
-  l' <- st (Pair val l)
+  l' <- st (Cons val l)
   up stack (Ind l')
 
 amb_ :: P a -> P b -> P ()
@@ -344,27 +375,28 @@ push1 val stack = amb cell top
     cell = do
       list <- pop stack
       _ <- nil list `amb_` pair list
-      l' <- st (Pair val list)
+      l' <- st (Cons val list)
       push l' stack
     top = push val stack
 
 -- Pop from "rope"
 pop1 :: Name -> P Name
-pop1 stack = amb cell top
+pop1 stack = amb top cell
   where
-    cell = do
-      list <- pop stack
-      amb (cell_O list) (cell_S list)
-    cell_O list = do
-      nil list
-      pop stack
-    cell_S list = do
-      (t, r) <- pair list
-      push r stack
-      return t
     top = pop stack
 
+    cell = do
+      list <- pop stack
+      let
+        cell_O = do
+          nil list
+          pop stack
+        cell_S = do
+          (t, r) <- pair list
+          push r stack
+          return t
 
+      amb cell_O cell_S
 
 pop :: Name -> P Name
 pop stack = do
@@ -426,6 +458,7 @@ dict_look key dict = do
 parse_step :: Name -> Name -> Name -> P ()
 parse_step dict l r = Split $
     [ p_node
+    --, p_name
     , p_clash
     , p_lbind
     , p_rbind
@@ -440,6 +473,12 @@ parse_step dict l r = Split $
       binding <- dict_look sym dict
       rule <- copy binding
       push rule r
+
+    --p_name = do
+    --  tk <- pop1 r
+    --  s <- token tk
+    --  v <- st $ Symbol s
+    --  push v r
 
     p_lbind = do
       l_node <- pop1 l
@@ -470,8 +509,8 @@ parse_step dict l r = Split $
     p_extend = do
       r_ext <- pop1 r
       (k, v) <- extension r_ext
-      -- TODO just make dict a list of Extensions
-      p <- st (Pair k v)
+      -- TODO make dict a list of Extensions
+      p <- st (Cons k v)
       push p dict
 
     p_sub = do
@@ -483,7 +522,7 @@ parse_step dict l r = Split $
 
 value :: Name -> P ()
 value name = do
-  amb_ (nil name) (token name)
+  (symbol name) `amb_` (tuple name)
 
     --p_noop = do
     --  r_noop <- pop r
@@ -511,11 +550,12 @@ mkChain f (x : xs) n = do
 rec_rule sym mrule dict = do
   rule <- mrule
   token <- word sym
-  r <- st $ Pair token rule
+  r <- st $ Cons token rule
   push r dict
 
 r_eq = do
   x <- var
+  p <- st $ Pair x x
   mkRule [x] [x] x
 
 r_plus = do
@@ -524,19 +564,20 @@ r_plus = do
   p <- st $ Pair l r
   mkRule [l] [r] p
 
-
 r_lbracket = do
   v <- var
-  arg <- st $ Sym v
+  arg <- st $ Token v
   meaning <- var
   op <- extend arg meaning
   n <- st Node
   out <- storeList [op, n]
+  --out <- storeList [op]
   mkRule [] [arg] out
 
 r_rbracket = do
   p <- var
-  v <- single p
+  v <- singleton p
+  value v
   mkRule [p] [] v
 
 rec_eq = rec_rule "=" r_eq
@@ -576,10 +617,13 @@ storeList :: [Name] -> P Name
 storeList [] = st Nil
 storeList (x : xs) = do
   r <- storeList xs
-  c <- st (Pair x r)
+  c <- st (Cons x r)
   return c
 
 program :: String -> Name -> P ()
 program str r = do
-  ops <- mapM word $ words str
-  mapM_ (flip push r) (reverse ops)
+    ops <- mapM constr $ words str
+    mapM_ (flip push r) (reverse ops)
+  where
+    constr t@(c : _) | isUpper c = sym t
+    constr t = word t
