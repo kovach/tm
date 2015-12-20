@@ -12,7 +12,6 @@ instance Show Name where
   show (N n) = "#" ++ show n
 toInt :: Name -> Int
 toInt (N n) = n
-incrName (N n) = (N (n+1))
 
 type Symbol = String
 
@@ -32,7 +31,10 @@ data T a
   | Cons a a
 
   | Extension a a
+  | Binding a a
+  | Unbinding
 
+  | Rule a a a
   | LBind a a
   | RBind a a
 

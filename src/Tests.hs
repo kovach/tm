@@ -16,7 +16,6 @@ p1 = do
   n1 <- st Var `amb` st Nil
   n2 <- st Var
   eq n1 n2
-  Stop
 
 p2 :: Pr
 p2 = do
@@ -101,24 +100,33 @@ p7 = do
   i2 <- pop s
   return (s, s0)
 
-p8 = do
+p8' = do
+  v <- var
   l <- var
+  n <- var
   r <- var
-  s <- pop r
+  val <- mkRule [l] [r] n
+  eq v val
+  return v
+
+p8 = do
+  s <- var
   (a, b) <- pleft s
-  push b l
-  return l
+  _ <- pright b
+  return s
 
 setup = do
   l <- var
   r <- var
   dict <- var
+  names <- var
 
   l0 <- ind l
   r0 <- ind r
   d0 <- ind dict
+  n0 <- ind names
 
-  return ((dict, l, r), (d0, l0, r0))
+  return ((n0, dict, l, r), (d0, l0, r0))
 
 done :: Name -> Name -> P Name
 done l r = do
@@ -128,19 +136,20 @@ done l r = do
   return v
 
 p9 = do
-  ((dict, l, r), (d0, l0, r0)) <- setup
-  parse_step dict l r
-  parse_step dict l r
-  parse_step dict l r
+  ((ns, dict, l, r), (d0, l0, r0)) <- setup
+  parse_step ns dict l r
+  parse_step ns dict l r
+  parse_step ns dict l r
   result <- done l r
   return (result, dict, l0, r0)
 
 
 standard_init = do
-  p@((dict, l, r), _) <- setup
+  p@((names, dict, l, r), _) <- setup
   empty dict
   empty l
   empty r
+  empty names
 
   mapM (flip (uncurry rec_rule) dict) rules
 
@@ -150,7 +159,7 @@ repl 0 m = return ()
 repl n m = m >> repl (n-1) m
 
 doCounter = True
-pfix dict l r c = Split [d, again]
+pfix names dict l r c = Split [d, again]
   where
     d = do
       res <- done l r
@@ -163,15 +172,15 @@ pfix dict l r c = Split [d, again]
                eq c i
                return v
              else return c
-      parse_step dict l r
-      pfix dict l r v
+      parse_step names dict l r
+      pfix names dict l r v
 
 -- TODO return count
 runp m = do
-  ((dict, l, r), (d0, l0, r0)) <- standard_init
+  ((names, dict, l, r), (d0, l0, r0)) <- standard_init
   counter <- var
   m dict l r
-  res <- pfix dict l r counter
+  res <- pfix names dict l r counter
   count <- nat2int counter
   return (count, res, dict, l0, r0)
 

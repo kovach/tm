@@ -3,6 +3,8 @@
 module Log3 where
 
 import Data.List
+--import Data.Vector as V (Vector, (//), (!), empty, replicate)
+--import Data.Vector.Mutable as V (MVector, read, write, new)
 import qualified Data.Foldable as F
 import Control.Monad
 import Control.Monad.State
@@ -14,12 +16,26 @@ import Data.Char (isUpper)
 
 import Types
 
-
-type Env v = (Int, [(Int, v)])
-emptyEnv :: Env a
+type Map v = [(Int, v)]
+mapLook k = fromJust . lookup k
+mapSet a b v = (a, b) : v
 emptyEnv = (0, [])
+--type Map v = Vector v
+--mapLook = flip (!)
+--mapSet a b v = v // [(a, b)]
+--emptyEnv = (0, V.replicate 10000 Nil)
 
-type Morph v = State (Env v)
+type Env v = (Int, Map v)
+
+data Basis v = Basis
+  { env :: Env v
+  }
+  deriving (Show)
+
+
+initialBasis = Basis emptyEnv
+
+type Morph v = State (Basis v)
 type MMorph v = EitherT String (Morph v)
 
 
@@ -30,37 +46,39 @@ fromJust (Just x) = x
 sep x y = show x ++ ", " ++ show y
 on op f x y = (f x) `op` (f y)
 
-
 type Error = String
 type ME a = Either Error a
 
 
-insertList n v [] = [(n,v)]
-insertList n v ((n', _) : rest) | n == n' = (n', v) : rest
-insertList n v (pair : rest) = pair : insertList n v rest
+insertList = mapSet
+--insertList n v [] = [(n,v)]
+--insertList n v ((n', _) : rest) | n == n' = (n', v) : rest
+--insertList n v (pair : rest) = pair : insertList n v rest
 
 update :: Name -> a -> Morph a ()
-update n v = modify $ \s -> update' s n v
+update (N n) v = modify $ \s ->
+  s { env = update' (N n) v (env s)}
 
-update' (c, env) (N n) v =
+update' (N n) v (c, env) =
   (c, insertList n v env)
 
 look :: Name -> Morph a a
 look (N n) = do
-  gets $ fromJust . lookup n . snd
+    gets $ mapLook n . snd . env
+
 --look :: Env a -> Name -> a
 --look env (N n) = fromJust $ lookup n $ snd env
 
 store :: a -> Morph a Name
 store v = do
-  e <- get
+  e <- gets env
   let (n, e') = store' e v
-  put e'
+  modify $ \s -> s { env = e' }
   return n
 
 store' :: Env v -> v -> (Name, Env v)
-store' (c, env) val =
-  (N c, (c+1, (c, val) : env))
+store' (c, env) val = (N c, (c+1, mapSet c val env))
+  --(N c, (c+1, (c, val) : env))
 
 data F a = F a | V Name
   deriving (Show, Eq, Ord, Functor, F.Foldable)
@@ -142,10 +160,10 @@ unify' v1 v2
   = do tagEq f1 f2
        childrenEq f1 f2
 
-    
+
 data Head a b = H
   { p :: I a b
-  , e :: Env a }
+  , e :: Basis a }
 
 sigh (y, x) =
   case y of
@@ -156,11 +174,11 @@ sigh (y, x) =
 runMM m e = runState (runEitherT m) e
 
 -- TODO use Data.Set?
-normalize :: [ME (Head Term a)] -> [ME (Head Term a)] 
+normalize :: [ME (Head Term a)] -> [ME (Head Term a)]
 normalize = sortOn thing
   where
     thing (Left _) = 0
-    thing (Right (H _ (c, _))) = c
+    thing (Right (H _ b)) = fst . env $ b
 
 step :: ME (Head Term a) -> Maybe [ME (Head Term a)]
 step (Left e) = Nothing
@@ -194,7 +212,7 @@ steps es =
   let
     (as, bs) = split $ map run es
     as' = normalize $ concat as
-    bs' = normalize $ concat bs
+    bs' = id $ concat bs
   in
   -- the as have fully normalized
   as' ++ steps bs'
@@ -228,7 +246,7 @@ takeNOK c n (Right x : r) = (c, Right x) : takeNOK (c+1) (n-1) r
 
 showMH (_, Left e) = e
 showMH (c, Right (H i e)) =
-  "DEPTH: " ++ show c ++ "\n" ++ ppI i ++ "\n" ++ show e
+  "DEPTH: " ++ show c ++ "\n" ++ ppI i -- ++ "\n" ++ show e
 
 ppI (Error err) =
   "Parse error: " ++ err
@@ -237,7 +255,7 @@ ppI Stop = "Done."
 ppI x = "Incomplete run."
 
 eval :: Show a => Int -> P a -> [(Int, ME (Head Term a))]
-eval n i = takeNOK 0 n $ steps [Right $ H i emptyEnv]
+eval n i = takeNOK 0 n $ steps [Right $ H i initialBasis]
 
 chk n i =
   case eval n i of
@@ -369,34 +387,34 @@ amb_ :: P a -> P b -> P ()
 amb_ a b = amb (a >> return ()) (b >> return ())
 
 -- Push onto "rope"
-push1 :: Name -> Name -> P ()
-push1 val stack = amb cell top
-  where
-    cell = do
-      list <- pop stack
-      _ <- nil list `amb_` pair list
-      l' <- st (Cons val list)
-      push l' stack
-    top = push val stack
+--push1 :: Name -> Name -> P ()
+--push1 val stack = amb cell top
+--  where
+--    cell = do
+--      list <- pop stack
+--      _ <- nil list `amb_` pair list
+--      l' <- st (Cons val list)
+--      push l' stack
+--    top = push val stack
 
 -- Pop from "rope"
-pop1 :: Name -> P Name
-pop1 stack = amb top cell
-  where
-    top = pop stack
-
-    cell = do
-      list <- pop stack
-      let
-        cell_O = do
-          nil list
-          pop stack
-        cell_S = do
-          (t, r) <- pair list
-          push r stack
-          return t
-
-      amb cell_O cell_S
+--pop1 :: Name -> P Name
+--pop1 stack = amb top cell
+--  where
+--    top = pop stack
+--
+--    cell = do
+--      list <- pop stack
+--      let
+--        cell_O = do
+--          nil list
+--          pop stack
+--        cell_S = do
+--          (t, r) <- pair list
+--          push r stack
+--          return t
+--
+--      amb cell_O cell_S
 
 pop :: Name -> P Name
 pop stack = do
@@ -405,25 +423,64 @@ pop stack = do
   up stack (Ind r)
   return t
 
+--pleft :: Name -> P (Name, Name)
+--pleft n = do
+--  v <- var
+--  next <- var
+--  p <- st (LBind v next)
+--  eq p n
+--  return (v, next)
+--
+--pright :: Name -> P (Name, Name)
+--pright n = do
+--  v <- var
+--  next <- var
+--  p <- st (RBind v next)
+--  eq p n
+--  return (v, next)
+
+rule :: Name -> P (Name, Name, Name)
+rule n = do
+  l <- var
+  r <- var
+  out <- var
+  st (Rule l out r)
+  return (l, out, r)
+
 pleft :: Name -> P (Name, Name)
 pleft n = do
-  v <- var
-  next <- var
-  p <- st (LBind v next)
-  eq p n
-  return (v, next)
+  (l, out, r) <- rule n
+  (h, ls) <- pair l
+  p0 <- st (Rule l out r)
+  p1 <- st (Rule ls out r)
+  eq p0 n
+  return (h, p1)
 
 pright :: Name -> P (Name, Name)
 pright n = do
-  v <- var
-  next <- var
-  p <- st (RBind v next)
-  eq p n
-  return (v, next)
+  (l, out, r) <- rule n
+  nil l
+  (h, rs) <- pair r
+  p0 <- st (Rule l out r)
+  p1 <- st (Rule l out rs)
+  eq p0 n
+  return (h, p1)
+
+bindName :: Name -> Name -> P Name
+bindName k v = do
+  st (Binding k v)
 
 extend :: Name -> Name -> P Name
 extend k v = do
   st (Extension k v)
+
+binding :: Name -> P (Name, Name)
+binding n = do
+  k <- var
+  v <- var
+  p <- bindName k v
+  eq p n
+  return (k, v)
 
 extension :: Name -> P (Name, Name)
 extension n = do
@@ -455,70 +512,107 @@ dict_look key dict = do
   dereference key the_dict
 
 -- Rules
-parse_step :: Name -> Name -> Name -> P ()
-parse_step dict l r = Split $
+parse_step :: Name -> Name -> Name -> Name -> P ()
+parse_step names dict l r = Split $
     [ p_node
     --, p_name
     , p_clash
     , p_lbind
     , p_rbind
+    , p_resolved
+
     , p_symbol
     , p_extend
-    , p_sub
+
+    , p_bind
+    , p_unbind
+    , p_name
+    -- , p_sub
     ]
 
   where
     p_symbol = do
-      sym <- pop1 r
-      binding <- dict_look sym dict
-      rule <- copy binding
+      sym <- pop r
+      b <- dict_look sym dict
+      rule <- copy b
       push rule r
 
+    p_name = do
+      sym <- pop r
+      node <- dict_look sym names
+      push node r
+
     --p_name = do
-    --  tk <- pop1 r
+    --  tk <- pop r
     --  s <- token tk
     --  v <- st $ Symbol s
     --  push v r
 
     p_lbind = do
-      l_node <- pop1 l
-      r_lbind <- pop1 r
+      l_node <- pop l
+      r_lbind <- pop r
       (t, next) <- pleft r_lbind
       eq t l_node
       push next r
 
     p_rbind = do
-      l_rbind <- pop1 l
-      r_node <- pop1 r
+      l_rbind <- pop l
+      r_node <- pop r
       (t, next) <- pright l_rbind
       eq t r_node
       push next r
 
+    p_resolved = do
+      done <- pop r
+      v <- var
+      p <- mkRule [] [] v
+      eq p done
+      push v r
+
     p_clash = do
-      l_rbind <- pop1 l
-      r_lbind <- pop1 r
+      l_rbind <- pop l
+      r_lbind <- pop r
       _ <- pright l_rbind
       _ <- pleft r_lbind
       Error $ "CLASH: " ++ sep l_rbind r_lbind
 
     p_node = do
-      r_node <- pop1 r
+      r_node <- pop r
       amb_ (value r_node) (pright r_node)
-      push1 r_node l
+      push r_node l
+
+    p_bind = do
+      r_bind <- pop r
+      (k, v) <- binding r_bind
+      p <- st (Cons k v)
+      push p names
+
+    p_unbind = do
+      v <- pop r
+      p <- st Unbinding
+      eq p v
+      single l
+      pop l
+      --
+      b <- pop names
+      (name, val0) <- pair b
+      val <- copy val0
+      p <- st (Cons name val)
+      push p dict
 
     p_extend = do
-      r_ext <- pop1 r
+      r_ext <- pop r
       (k, v) <- extension r_ext
-      -- TODO make dict a list of Extensions
+      -- TODO make dict a list of Extensions?
       p <- st (Cons k v)
       push p dict
 
-    p_sub = do
-      rn <- pop1 r
-      p <- st Node
-      eq p rn
-      n <- st Nil
-      push1 n l
+    --p_sub = do
+    --  rn <- pop1 r
+    --  p <- st Node
+    --  eq p rn
+    --  n <- st Nil
+    --  push1 n l
 
 value :: Name -> P ()
 value name = do
@@ -536,9 +630,13 @@ value name = do
 -- Program construction
 mkRule :: [Name] -> [Name] -> Name -> P Name
 mkRule lefts rights node = do
-  r0 <- mkChain RBind rights node
-  r1 <- mkChain LBind lefts r0
-  return r1
+  ls <- storeList lefts
+  -- TODO snoc list?
+  rs <- storeList rights
+  st (Rule ls node rs)
+  --r0 <- mkChain RBind rights node
+  --r1 <- mkChain LBind lefts r0
+  --return r1
 
 mkChain :: (Name -> Name -> Term) -> [Name] -> Name -> P Name
 mkChain _ [] n = return n
@@ -567,18 +665,29 @@ r_plus = do
 r_lbracket = do
   v <- var
   arg <- st $ Token v
+  --meaning <- var
   meaning <- var
-  op <- extend arg meaning
-  n <- st Node
-  out <- storeList [op, n]
-  --out <- storeList [op]
-  mkRule [] [arg] out
+  _ <- rule meaning
+  op <- bindName arg meaning
+  mkRule [] [arg] op
 
-r_rbracket = do
-  p <- var
-  v <- singleton p
-  value v
-  mkRule [p] [] v
+r_rbracket = st $ Unbinding
+
+-- r_lbracket = do
+--   v <- var
+--   arg <- st $ Token v
+--   meaning <- var
+--   op <- extend arg meaning
+--   n <- st Node
+--   out <- storeList [op, n]
+--   --out <- storeList [op]
+--   mkRule [] [arg] out
+--
+-- r_rbracket = do
+--   p <- var
+--   v <- singleton p
+--   value v
+--   mkRule [p] [] v
 
 rec_eq = rec_rule "=" r_eq
 rec_plus = rec_rule "+" r_plus
